@@ -54,14 +54,14 @@ func Preloaded[T any](loader LazyFunc[T], value T, ctx any) Lazy[T] {
 // PreloadedTTL is like Preloaded but also enables TTL caching for the instance.
 // Cached value will be invalidated after TTL expires, then provided loader will
 // be invoked again to load value again.
-func PreloadedTTL[T any](loader LazyFunc[T], value T, ctx any, ttl time.Duration) *withLoader[T] {
+func PreloadedTTL[T any](loader LazyFunc[T], value T, ctx any, ttl time.Duration) Lazy[T] {
 	return newWithLoaderPreloaded(loader, value, ctx, true, ttl)
 }
 
 // Static returns a Lazy[T] that always returns the provided value
 // (even after clearing cache) and never invokes a loader. This is a convenience
 // for tests or fixed values.
-func Static[T any](value T) *static[T] {
+func Static[T any](value T) Lazy[T] {
 	return &static[T]{
 		value: value,
 	}
