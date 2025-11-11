@@ -64,7 +64,7 @@ CURRENT_VERSION := $(shell git describe --tags --abbrev=0 2>/dev/null || echo "v
 
 # Calculate next version
 define bump_version
-	@OLD=$(CURRENT_VERSION); \
+	OLD=$(1); \
 	if [ "$(BUMP)" = "major" ]; then \
 		NEW=$$(echo $$OLD | awk -F. '{printf "v%d.0.0", substr($$1,2)+1}'); \
 	elif [ "$(BUMP)" = "minor" ]; then \
@@ -77,11 +77,11 @@ endef
 
 next-version:
 	@echo "Current version: $(CURRENT_VERSION)"
-	@echo "Next version: $$( $(call bump_version) )"
+	@echo "Next version: $$( $(call bump_version,$(CURRENT_VERSION)) )"
 
 release:
 	@echo "🚀 Releasing new $(BUMP) version..."
-	@NEW_VERSION=$$( $(call bump_version) ); \
+	@NEW_VERSION=$$( $(call bump_version,$(CURRENT_VERSION)) ); \
 	echo "Tagging $$NEW_VERSION"; \
 	git tag $$NEW_VERSION; \
 	git push origin $$NEW_VERSION; \
