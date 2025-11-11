@@ -18,7 +18,7 @@ go get github.com/duhnnie/golazy
 - Generic `Lazy[T]` interface with `Value`, `Clear`, and `ClearAll`.
 - Create a lazy loader with `WithLoader` or `WithLoaderTTL` (TTL-enabled).
 - Preload an initial value for a particular context with `Preloaded`/`PreloadedTTL`.
-- `NewStatic` for values that never change (useful in tests or constant wiring).
+- `Static` for values that never change (useful in tests or constant wiring).
 
 ## Usage
 
@@ -127,7 +127,7 @@ v, _ := pre.Value("ctx-1") // returns "initial"
 When the value of your variable is never gonna change use a static-lazy.
 
 ```go
-s := golazy.NewStatic(123)
+s := golazy.Static(123)
 v, _ := s.Value(nil) // always returns 123
 ```
 
