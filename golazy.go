@@ -58,10 +58,10 @@ func PreloadedTTL[T any](loader LazyFunc[T], value T, ctx any, ttl time.Duration
 	return newWithLoaderPreloaded(loader, value, ctx, true, ttl)
 }
 
-// NewStatic returns a Lazy[T] that always returns the provided value
+// Static returns a Lazy[T] that always returns the provided value
 // (even after clearing cache) and never invokes a loader. This is a convenience
 // for tests or fixed values.
-func NewStatic[T any](value T) *static[T] {
+func Static[T any](value T) *static[T] {
 	return &static[T]{
 		value: value,
 	}
