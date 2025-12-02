@@ -1,93 +1,97 @@
 package golazy
 
 import (
+	"context"
 	"sync"
 	"time"
 )
 
 // withLoader is the internal implementation of Lazy[T] that supports a loader
-// function, optional TTL-based per-context caching, and preloaded values.
+// function, optional TTL-based caching, and preloaded values.
 type withLoader[T any] struct {
-	values  map[any]T
-	times   map[any]*time.Time
-	ttl     time.Duration
+	// value holds the cached result of the loader
+	value T
+	// args are constructor arguments forwarded to the loader on each invocation
+	args []any
+	// loader is the LazyFunc that loads the value
+	loader LazyFunc[T]
+	// loaded tracks whether value is valid (loader succeeded)
+	loaded bool
+	// withTTL enables TTL-based cache expiration
 	withTTL bool
-	loader  LazyFunc[T]
-	mu      *sync.Mutex
+	// ttl is the time-to-live duration for cached values
+	ttl time.Duration
+	// lastLoad records the timestamp of the most recent successful load
+	lastLoad *time.Time
+	// mu serializes access to the cache and loader invocation
+	mu *sync.Mutex
 }
 
 // newWithLoader constructs a withLoader that will call loader on demand. If
 // withTTL is true, returned values are cached for the provided ttl duration.
-func newWithLoader[T any](loader LazyFunc[T], withTTL bool, ttl time.Duration) *withLoader[T] {
+// The args are forwarded to the loader on each invocation.
+func newWithLoader[T any](loader LazyFunc[T], withTTL bool, ttl time.Duration, args ...any) *withLoader[T] {
 	return &withLoader[T]{
-		values:  make(map[any]T),
-		times:   make(map[any]*time.Time),
+		args:    args,
 		loader:  loader,
-		ttl:     ttl,
 		withTTL: withTTL,
+		ttl:     ttl,
 		mu:      &sync.Mutex{},
 	}
 }
 
 // newWithLoaderPreloaded constructs a withLoader pre-populated with a value
-// for the provided ctx. This is useful when you already have a value and want
-// to expose it through the Lazy API.
-func newWithLoaderPreloaded[T any](loader LazyFunc[T], value T, ctx any, withTTL bool, ttl time.Duration) *withLoader[T] {
-	values := make(map[any]T)
-	values[ctx] = value
+// for the provided context. This is useful when you already have a value and want
+// to expose it through the Lazy API with TTL support.
+func newWithLoaderPreloaded[T any](value T, loader LazyFunc[T], withTTL bool, ttl time.Duration, args ...any) *withLoader[T] {
+	lastLoad := time.Now()
 
 	return &withLoader[T]{
-		values:  values,
-		times:   make(map[any]*time.Time),
-		loader:  loader,
-		ttl:     ttl,
-		withTTL: withTTL,
-		mu:      &sync.Mutex{},
+		value:    value,
+		args:     args,
+		loader:   loader,
+		withTTL:  withTTL,
+		ttl:      ttl,
+		lastLoad: &lastLoad,
+		mu:       &sync.Mutex{},
 	}
 }
 
-// Value returns the cached value for ctx if present and not expired. Otherwise
-// it calls the loader (if set) to obtain the value, caches it, and returns it.
+// Value returns the cached value if present and not expired. Otherwise
+// it calls the loader to obtain the value, caches it, and returns it.
 // The method is safe for concurrent use because it synchronizes using a mutex.
-func (l *withLoader[T]) Value(ctx any) (T, error) {
+// If one context.Context is provided, it is passed to the loader; otherwise
+// context.Background() is used.
+func (l *withLoader[T]) Value(ctxs ...context.Context) (T, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	needsRefresh := l.withTTL && l.times[ctx] != nil && time.Since(*l.times[ctx]) > l.ttl
+	var err error
+	needsRefresh := l.withTTL && l.lastLoad != nil && time.Since(*l.lastLoad) > l.ttl
 
-	if v, ok := l.values[ctx]; ok && !needsRefresh {
-		return v, nil
-	}
+	if !l.loaded || needsRefresh {
+		var ctx context.Context
 
-	if l.loader == nil {
-		return l.values[nil], nil
-	}
+		if len(ctxs) > 0 {
+			ctx = ctxs[0]
+		} else {
+			ctx = context.Background()
+		}
 
-	v, err := l.loader(ctx)
-	if err == nil {
-		l.values[ctx] = v
-	}
-
-	if l.withTTL {
+		l.value, err = l.loader(ctx, l.args...)
+		l.loaded = err == nil
 		t := time.Now()
-		l.times[ctx] = &t
+		l.lastLoad = &t
 	}
 
-	return v, err
+	return l.value, err
 }
 
-// Clear removes the cached value for the given context.
-func (l *withLoader[T]) Clear(ctx any) {
+// Clear marks the cached value as unloaded so the next Value() call will
+// invoke the loader again.
+func (l *withLoader[T]) Clear() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	delete(l.values, ctx)
-	delete(l.times, ctx)
-}
-
-// ClearAll clears the entire cache maintained by the withLoader.
-func (l *withLoader[T]) ClearAll() {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.values = make(map[any]T)
-	l.times = map[any]*time.Time{}
+	l.loaded = false
+	l.lastLoad = nil
 }

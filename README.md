@@ -1,233 +1,97 @@
 # golazy
 
-golazy provides a context-based lazy-loading mechanism for variables, with support for per-context caching, preloaded values and time-to-live (TTL) functionality.
+golazy is a small, dependency-free Go library that provides a context-aware,
+generic lazy-loading abstraction. It lets you declare values that are loaded on
+first use (or preloaded) and optionally cached with a TTL. The implementation
+is safe for concurrent use and keeps the public API intentionally small.
 
-It provides a small `Lazy[T]` abstraction that can load values on demand using a
-user-provided loader function.
+## Quick summary
+- `LazyFunc[T]` — loader function type: `func(ctx context.Context, args ...any) (T, error)`
+- `Lazy[T]` — main interface: `Value(ctxs ...context.Context) (T, error)` and `Clear()`
+- Constructors: `WithLoader`, `WithLoaderTTL`, `Preloaded`, `PreloadedTTL`, `Static`
 
 ## Installation
 
-Requires Go 1.19+ 
+Requires Go 1.19+. Install with:
 
 ```bash
 go get github.com/duhnnie/golazy
 ```
 
-## Features
+## API reference & examples
 
-- Generic `Lazy[T]` interface with `Value`, `Clear`, and `ClearAll`.
-- Create a lazy loader with `WithLoader` or `WithLoaderTTL` (TTL-enabled).
-- Preload an initial value for a particular context with `Preloaded`/`PreloadedTTL`.
-- `Static` for values that never change (useful in tests or constant wiring).
+### Loader signature
 
-## Usage
+```go
+type LazyFunc[T any] func(ctx context.Context, args ...any) (T, error)
+```
+
+The loader receives a `context.Context` (for cancellation/deadlines/values)
+and zero or more `args` passed when the `Lazy` value was constructed.
+
+### Constructors
+
+- `WithLoader[T](loader LazyFunc[T], args ...any) Lazy[T]` — create a lazy value that calls `loader` on first use.
+- `WithLoaderTTL[T](loader LazyFunc[T], ttl time.Duration, args ...any) Lazy[T]` — like `WithLoader` but caches the last successful value for `ttl`.
+- `Preloaded[T](value T, loader LazyFunc[T], args ...any) Lazy[T]` — construct a `Lazy` already populated with `value`.
+- `PreloadedTTL[T](value T, loader LazyFunc[T], ttl time.Duration, args ...any) Lazy[T]` — like `Preloaded` but preloads the value and enables TTL behavior.
+- `Static[T](value T) Lazy[T]` — returns a `Lazy` that always yields `value` and never calls a loader.
 
 ### Basic usage
 
-Assume you have a function that loads some config or remote resource:
-
 ```go
-package main
-
-import (
-    "fmt"
-    "time"
-
-    "github.com/duhnnie/golazy"
-)
-
-func main() {
-    loader := func(ctx any) (string, error) {
-        // pretend to load from remote or disk using ctx as key
-        key := ctx.(string)
-        return "value-for-" + key, nil
-    }
-
-    lazy := golazy.WithLoader[string](loader)
-
-    v, err := lazy.Value("alpha")
-    if err != nil {
-        panic(err)
-    }
-    fmt.Println(v) // prints: value-for-alpha
-
-    // Clear cached value for a key
-    lazy.Clear("alpha")
+loader := func(ctx context.Context, args ...any) (string, error) {
+    // args[0] contains a key passed during construction
+    key := args[0].(string)
+    return "value-for-" + key, nil
 }
+
+lazy := golazy.WithLoader[string](loader, "alpha")
+v, err := lazy.Value() // uses context.Background()
+_ = v
+
+// optionally pass a context:
+v2, err := lazy.Value(context.WithValue(context.Background(), "k", "v"))
+_ = v2
+
+// clear cached value so next Value() triggers loader again
+lazy.Clear()
 ```
 
-### Using contexts
-
-You can use the same `golazy.Lazy` var to return a different value for every different context:
+### Using TTL
 
 ```go
-package main
-
-import (
-	"errors"
-	"fmt"
-
-	"github.com/duhnnie/golazy"
-)
-
-func dataLoader(ctx any) ([]int, error) {
-	if n, ok := ctx.(int); !ok {
-		return nil, errors.New("context should be an int")
-	} else {
-		return []int{n + 0, n + 1, n + 2}, nil
-	}
-}
-
-func main() {
-	data := golazy.WithLoader(dataLoader)
-	v, err := data.Value(10) // context 10 returns: 10, 11, 12
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Println(v)
-
-	v2, err := data.Value(100) // context 100 returns: 100, 101, 102
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Println(v2)
-
-	data.Clear(10)  // Clears cache for the '10' context
-	data.ClearAll() // Clears cache for all contexts
-}
+lazyTTL := golazy.WithLoaderTTL[int](loaderFunc, 5*time.Second, 123)
 ```
 
-### Using TTL caching
-
-TTL caching allows you to set an expiration time for your data, so any access after that time loader function will be invoked again.
+### Preloaded & Static
 
 ```go
-loader := func(ctx any) (int, error) {
-    return 42, nil
-}
+pre := golazy.Preloaded[string]("initial", loader)
+v, _ := pre.Value()
 
-lazyTTL := golazy.WithLoaderTTL[int](loader, 5*time.Second)
-// value will be cached per-context for 5s
-// also try golazy.PreloadedTTL()
+st := golazy.Static(42)
+v2, _ := st.Value()
 ```
 
-### Preloaded value
+### Clearing cache
 
-Sometimes you already have the value intended to be loaded, for that case use a preloaded-lazy.
+Call `Clear()` on the `Lazy` value to mark it as unloaded. The next call to
+`Value()` will run the loader again (or return the preloaded/static value).
 
 ```go
-pre := golazy.Preloaded[string](loader, "initial", "ctx-1")
-v, _ := pre.Value("ctx-1") // returns "initial"
+lazy.Clear()
 ```
 
-### Static value
+## Notes & gotchas
 
-When the value of your variable is never gonna change use a static-lazy.
-
-```go
-s := golazy.Static(123)
-v, _ := s.Value(nil) // always returns 123
-```
-
-## Real-life example
-
-Usually structs have properties that are lazy loaded. Next code shows how to use `golazy` in that situation:
-
-```go
-package main
-
-import (
-	"errors"
-	"fmt"
-
-	"github.com/duhnnie/golazy"
-)
-
-// Define Student struct
-type Student struct {
-	ID   int
-	Name string
-}
-
-// Define Couse struct
-type Course struct {
-	ID       int
-	Topic    string
-	students golazy.Lazy[[]*Student]
-}
-
-func (c *Course) GetStudents() ([]*Student, error) {
-	return c.students.Value(c)
-}
-
-// Define our loader function, it accepts any value as context
-func studentsLoader(ctx any) ([]*Student, error) {
-	if course, ok := ctx.(*Course); !ok {
-		return nil, errors.New("invalid context")
-	} else {
-		fmt.Printf("loading studets enrolled in course with id: %d\n", course.ID)
-
-		// here you can fetch students from a database or any other external source
-		// simulate time consuming task
-
-		time.Sleep(1 * time.Second)
-
-		return []*Student{
-			{1, "Cooper"},
-			{2, "Monica"},
-			{3, "Mr. Ed"},
-		}, nil
-	}
-
-}
-
-// Define our Course factory function
-func NewCourse(id int, topic string, studentsLazyLoader golazy.LazyFunc[[]*Student]) *Course {
-	return &Course{
-		ID:       id,
-		Topic:    topic,
-		students: golazy.WithLoader(studentsLazyLoader),
-	}
-}
-
-func main() {
-    c := NewCourse(23, "Algorithms", studentsLoader)
-
-	s, err := c.GetStudents()
-	if err != nil {
-		panic(err)
-	}
-
-	for _, student := range s {
-		fmt.Printf("Student %d: %s\n", student.ID, student.Name)
-	}
-}
-```
-
-## Clear Cache
-
-Variable value is only load once, unless you get some error from loading function. All next calls to `Value(ctx)` will return the value loaded before.
-
-You might want to clear that cached value, to load fresh data next time `Value(ctx)` is called. For that you have two methods:
-
-```go
-lazyVar.Clear(ctx) // Clears cached value on supplied context
-lazyVar.ClearAll() // Clears cached value for all contexts
-```
-
-## Notes
-
-- The package uses `any` for context/key values; you can use strings, structs, or
-  other comparable types as keys. If you need complex keying, use a dedicated
-  key type.
-- The loader receives the same `ctx` value used as the cache key; use it if
-  your loader needs it.
+- `Value` accepts zero or one `context.Context`. When omitted `context.Background()` is used.
+- Constructors accept `args ...any` which are forwarded to the loader on every invocation. This lets you configure the loader with static parameters.
+ - `PreloadedTTL` is implemented with the signature `PreloadedTTL[T](value T, loader LazyFunc[T], ttl time.Duration, args ...any)` and forwards to the internal constructor.
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request. Check the [guidelines](./CONTRIBUTING.md).
+Contributions welcome — please follow the [guidelines](CONTRIBUTING.md).
 
 ## License
 

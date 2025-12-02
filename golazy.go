@@ -1,69 +1,71 @@
-// Package golazy provides a context-based lazy-loading mechanism
-// for variables, with support for per-context caching, preloaded
-// values and time-to-live (TTL) functionality.
+// Package golazy is a small, dependency-free Go library that provides a
+// context-aware, generic lazy-loading abstraction. It lets you declare values
+// that are loaded on first use (or preloaded) and optionally cached with a TTL.
+// The implementation is safe for concurrent use and keeps the public API
+// intentionally small.
 package golazy
 
 import (
+	"context"
 	"time"
 )
 
-// Package golazy provides a small, generic lazy-loading helper.
-// It exposes a Lazy[T] abstraction that can load values on demand using a
-// user-provided loader function. The implementation supports optional TTL-based
-// caching and preloaded values keyed by an arbitrary context value.
+// LazyFunc is the type of loader functions passed to WithLoader, WithLoaderTTL,
+// Preloaded, and PreloadedTTL. The loader receives a context.Context (for
+// cancellation/deadlines/values) and optional args provided during construction,
+// and must return a value of type T and an error.
+type LazyFunc[T any] func(ctx context.Context, args ...any) (T, error)
 
-// LazyFunc is the type of loader functions passed to WithLoader/Preloaded.
-// The loader receives a context (of any type) and should return a value of type
-// T and an error. The context can be used as a key for per-context caching.
-type LazyFunc[T any] func(ctx any) (T, error)
-
-// Lazy represents a lazy-loaded value of type T. Calls to Value(ctx) will
-// invoke the configured loader when needed and cache the result. Clear/ClearAll
-// allow clearing cached entries.
+// Lazy represents a lazy-loaded value of type T. Calls to Value() will
+// invoke the configured loader when needed and cache the result. Clear()
+// allows clearing cached entries.
 type Lazy[T any] interface {
-	// Value returns the value for the given context, calling the loader if the
-	// value is not yet present (or if TTL expired for TTL-enabled instances).
-	Value(ctx any) (T, error)
+	// Value returns the value, calling the loader if the value is not yet present
+	// (or if TTL expired for TTL-enabled instances). While it accepts a variadic
+	// context.Context parameter it only uses the first one (if supplied), so you
+	// don't have to provide anything if you don't need it; if none is provided,
+	// context.Background() is used.
+	Value(ctxs ...context.Context) (T, error)
 
-	// Clear deletes the cached value for the provided context.
-	Clear(ctx any)
-
-	// ClearAll clears the entire cache maintained by the Lazy instance.
-	ClearAll()
+	// Clear marks the cached value as unloaded so the next Value() call will
+	// invoke the loader again.
+	Clear()
 }
 
 // WithLoader creates a Lazy[T] that will call the provided loader when
-// using a context for the first time at calling the Value() method.
-// Next times using that context, value will be returned from cache
-// unless cache is cleared.
-func WithLoader[T any](loader LazyFunc[T]) Lazy[T] {
-	return newWithLoader(loader, false, 0)
+// Value() is invoked for the first time. Subsequent calls return the cached
+// value unless Clear() is called. The args are forwarded to the loader on
+// each invocation.
+func WithLoader[T any](loader LazyFunc[T], args ...any) Lazy[T] {
+	return newWithLoader(loader, false, 0, args...)
 }
 
-// WithLoaderTTL id like WithLoader but also enables TTL caching per
-// context. Cached value will be invalidated after TTL expires, then
-// provided loader will be invoked again to load value again.
-func WithLoaderTTL[T any](loader LazyFunc[T], ttl time.Duration) Lazy[T] {
-	return newWithLoader(loader, true, ttl)
+// WithLoaderTTL is like WithLoader but also enables TTL caching. Cached values
+// are invalidated after ttl expires, then the provided loader will be invoked
+// again to load a fresh value. The args are forwarded to the loader on each
+// invocation.
+func WithLoaderTTL[T any](loader LazyFunc[T], ttl time.Duration, args ...any) Lazy[T] {
+	return newWithLoader(loader, true, ttl, args...)
 }
 
-// Preloaded returns a Lazy[T] pre-populated with value for the given ctx. The
-// loader is still kept and may be used for other contexts or after cache is
-// cleared for current/all contexts.
-func Preloaded[T any](loader LazyFunc[T], value T, ctx any) Lazy[T] {
-	return newWithLoaderPreloaded(loader, value, ctx, false, 0)
+// Preloaded returns a Lazy[T] pre-populated with value. The loader is still
+// kept and may be used for other contexts or after Clear() is called. This is
+// useful when you already have an initial value or a default to return. The args
+// are forwarded to the loader when it runs.
+func Preloaded[T any](value T, loader LazyFunc[T], args ...any) Lazy[T] {
+	return newWithLoaderPreloaded(value, loader, false, 0, args...)
 }
 
-// PreloadedTTL is like Preloaded but also enables TTL caching for the instance.
-// Cached value will be invalidated after TTL expires, then provided loader will
-// be invoked again to load value again.
-func PreloadedTTL[T any](loader LazyFunc[T], value T, ctx any, ttl time.Duration) Lazy[T] {
-	return newWithLoaderPreloaded(loader, value, ctx, true, ttl)
+// PreloadedTTL is like Preloaded but also enables TTL caching. The initial value
+// is returned immediately, and the loader may be invoked after the TTL expires
+// to load a fresh value. The args are forwarded to the loader on each invocation.
+func PreloadedTTL[T any](value T, loader LazyFunc[T], ttl time.Duration, args ...any) Lazy[T] {
+	return newWithLoaderPreloaded(value, loader, true, ttl, args...)
 }
 
-// Static returns a Lazy[T] that always returns the provided value
-// (even after clearing cache) and never invokes a loader. This is a convenience
-// for tests or fixed values.
+// Static returns a Lazy[T] that always returns the provided value and never
+// invokes a loader. This is a convenience for tests or fixed values. Clear()
+// is a no-op for Static.
 func Static[T any](value T) Lazy[T] {
 	return &static[T]{
 		value: value,
