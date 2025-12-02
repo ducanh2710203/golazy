@@ -40,22 +40,56 @@ and zero or more `args` passed when the `Lazy` value was constructed.
 ### Basic usage
 
 ```go
-loader := func(ctx context.Context, args ...any) (string, error) {
-    // args[0] contains a key passed during construction
-    key := args[0].(string)
-    return "value-for-" + key, nil
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/duhnnie/golazy"
+)
+
+type Artist struct {
+	ID     string
+	Name   string
+	albums golazy.Lazy[[]string]
 }
 
-lazy := golazy.WithLoader[string](loader, "alpha")
-v, err := lazy.Value() // uses context.Background()
-_ = v
+func NewArtist(id, name string, albumLoader golazy.LazyFunc[[]string]) *Artist {
+	return &Artist{
+		ID:     id,
+		Name:   name,
+		albums: golazy.WithLoader(albumLoader, id),
+	}
+}
 
-// optionally pass a context:
-v2, err := lazy.Value(context.WithValue(context.Background(), "k", "v"))
-_ = v2
+func (a *Artist) Albums() ([]string, error) {
+	return a.albums.Value()
+}
 
-// clear cached value so next Value() triggers loader again
-lazy.Clear()
+func main() {
+	invalidArgsErr := errors.New("invalid args")
+
+	loader := func(ctx context.Context, args ...any) ([]string, error) {
+		if len(args) < 1 {
+			return nil, invalidArgsErr
+		} else if id, ok := args[0].(string); !ok {
+			return nil, invalidArgsErr
+		} else {
+			fmt.Printf("loading albums for artist id %s\n", id)
+			// Perform some operation to get data
+			return []string{"The Colour And The Shape", "There is Nothing Left to Lose"}, nil
+		}
+	}
+
+	a := NewArtist("1234", "Foo Fighters", loader)
+	albums, err := a.Albums()
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("%v\n", albums)
+}
 ```
 
 ### Using TTL
