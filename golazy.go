@@ -71,3 +71,13 @@ func Static[T any](value T) Lazy[T] {
 		value: value,
 	}
 }
+
+// LazyFuncFor returns a LazyFunc[T] that always returns the provided value
+// and ignores the context and args. This is useful for creating a constant
+// loader function suitable for use with WithLoader, Preloaded, or similar
+// constructors when you want a trivial loader that never fails.
+func LazyFuncFor[T any](v T) LazyFunc[T] {
+	return func(ctx context.Context, args ...any) (T, error) {
+		return v, nil
+	}
+}
