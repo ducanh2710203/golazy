@@ -9,6 +9,7 @@ is safe for concurrent use and keeps the public API intentionally small.
 - `LazyFunc[T]` — loader function type: `func(ctx context.Context, args ...any) (T, error)`
 - `Lazy[T]` — main interface: `Value(ctxs ...context.Context) (T, error)` and `Clear()`
 - Constructors: `WithLoader`, `WithLoaderTTL`, `Preloaded`, `PreloadedTTL`, `Static`
+- Helper: `LazyFuncFor` — creates a constant loader function
 
 ## Installation
 
@@ -36,6 +37,10 @@ and zero or more `args` passed when the `Lazy` value was constructed.
 - `Preloaded[T](value T, loader LazyFunc[T], args ...any) Lazy[T]` — construct a `Lazy` already populated with `value`.
 - `PreloadedTTL[T](value T, loader LazyFunc[T], ttl time.Duration, args ...any) Lazy[T]` — like `Preloaded` but preloads the value and enables TTL behavior.
 - `Static[T](value T) Lazy[T]` — returns a `Lazy` that always yields `value` and never calls a loader.
+
+### Helpers
+
+- `LazyFuncFor[T](value T) LazyFunc[T]` — creates a constant `LazyFunc[T]` that always returns the provided value. Useful for creating trivial loaders in tests or when you need a loader that never fails.
 
 ### Basic usage
 
@@ -106,6 +111,11 @@ v, _ := pre.Value()
 
 st := golazy.Static(42)
 v2, _ := st.Value()
+
+// Using LazyFuncFor to create a constant loader
+constLoader := golazy.LazyFuncFor("constant-value")
+lazy := golazy.WithLoader(constLoader)
+v3, _ := lazy.Value()
 ```
 
 ### Clearing cache
