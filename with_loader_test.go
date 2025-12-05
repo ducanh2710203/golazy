@@ -8,7 +8,9 @@ import (
 	"time"
 )
 
+// Internal tests for newWithLoader and withLoader implementation
 func TestNewWithLoader(t *testing.T) {
+	t.Parallel()
 	loader := func(ctx context.Context, args ...any) (string, error) {
 		return "value", nil
 	}
@@ -23,6 +25,7 @@ func TestNewWithLoader(t *testing.T) {
 }
 
 func TestNewWithLoaderPreloaded(t *testing.T) {
+	t.Parallel()
 	loader := func(ctx context.Context, args ...any) (string, error) {
 		return "new_value", nil
 	}
@@ -34,6 +37,7 @@ func TestNewWithLoaderPreloaded(t *testing.T) {
 }
 
 func TestValue_CachedValue(t *testing.T) {
+	t.Parallel()
 	callCount := 0
 	loader := func(ctx context.Context, args ...any) (string, error) {
 		callCount++
@@ -53,6 +57,7 @@ func TestValue_CachedValue(t *testing.T) {
 }
 
 func TestValue_LoaderError(t *testing.T) {
+	t.Parallel()
 	loader := func(ctx context.Context, args ...any) (string, error) {
 		return "", errors.New("loader error")
 	}
@@ -90,6 +95,7 @@ func TestValue_TTLExpiration(t *testing.T) {
 }
 
 func TestClear(t *testing.T) {
+	t.Parallel()
 	loader := func(ctx context.Context, args ...any) (string, error) {
 		return "value", nil
 	}
