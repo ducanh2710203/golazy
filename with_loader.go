@@ -50,6 +50,7 @@ func newWithLoaderPreloaded[T any](value T, loader LazyFunc[T], withTTL bool, tt
 		value:    value,
 		args:     args,
 		loader:   loader,
+		loaded:   true,
 		withTTL:  withTTL,
 		ttl:      ttl,
 		lastLoad: &lastLoad,
