@@ -13,8 +13,10 @@ Important API notes
   - `WithLoader[T](loader LazyFunc[T], args ...any) Lazy[T]`
   - `WithLoaderTTL[T](loader LazyFunc[T], ttl time.Duration, args ...any) Lazy[T]`
   - `Preloaded[T](value T, loader LazyFunc[T], args ...any) Lazy[T]`
-  - `PreloadedTTL` currently has an inconsistent signature in the source (see README note)
+  - `PreloadedTTL[T](value T, loader LazyFunc[T], ttl time.Duration, args ...any) Lazy[T]`
   - `Static[T](value T) Lazy[T]`
+- **Helpers**:
+  - `LazyFuncFor[T](value T) LazyFunc[T]` — creates a constant loader function for trivial/test use cases
 
 Code-generation constraints & patterns
 - Preserve the context-aware loader behavior: always pass a `context.Context` as first loader argument.
@@ -33,7 +35,8 @@ Where to look for examples
 - `README.md` contains usage examples reflecting the current API.
 
 Notes for maintainers
-- The repository currently contains an odd `PreloadedTTL` signature (`loader, value, ctx, ttl, args`) that doesn't match the internal `newWithLoaderPreloaded` ordering. If you change the public API, update callers and tests accordingly.
 - If you add new features that change loader invocation (e.g., per-key caching or parallel loads), add tests that validate concurrency (`sync` usage) and TTL behaviour.
+- Most tests are marked with `t.Parallel()` for concurrent execution. Tests involving TTL timing (`TestValue_TTLExpiration`, `TestWithLoaderTTL_ReloadsAfterTTLExpires`, `TestPreloadedTTL_ReloadsAfterTTLExpires`) and concurrency testing (`TestConcurrency`) run sequentially to ensure correctness.
+- Test files: `golazy_test.go` (public API tests), `with_loader_test.go` (internal implementation tests), `static_test.go` (static implementation tests).
 
 If anything here is unclear, tell me which API or example you want expanded and I'll update this guidance.
