@@ -1,0 +1,33 @@
+img{
+    border-radius:100%;
+    width: 400px;
+    
+}
+body{
+    font-size: 25px;
+}
+.left{
+    float: left;
+    display: block;
+    text-align: left;
+    width: 30%;
+     background-color: wheat;
+    border-radius: 30px;
+    height: 900px;
+}
+.right{
+    background-color: aquamarine;
+    float: right;
+    width: 67%;
+   height: 900px;
+    border-radius: 30px;
+}
+.in_right{
+    width: 40%;
+}
+.text_center{
+    margin: auto;
+    width: 40%;
+   
+    padding: 10px;
+}
